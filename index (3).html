@@ -1,0 +1,810 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#eef0f2" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0f1419" media="(prefers-color-scheme: dark)">
+<title>SetrikaMap: lokasi setrika asrama</title>
+<meta name="description" content="Setrika bersama sekarang ada di kamar mana? Lihat lokasi terakhir dan perbarui kalau setrikanya pindah.">
+<style>
+/* ===== Token =====
+   Satu arti untuk oranye: "di sinilah setrikanya" (hero dan kamar bertanda).
+   Tombol dan teks memakai tinta gelap, supaya mata langsung ke oranye. */
+:root{
+  --bg:#eef0f2; --surface:#ffffff; --ink:#11181f; --muted:#4d5864;
+  --ctrl:#7d8793; --hover:#e1e5e9; --tone:#e4e8eb;
+  --field:#ff7a3d; --on-field:#11181f; --on-field-2:#4a2208;
+  --quiet:#dde1e5; --on-quiet:#11181f; --on-quiet-2:#4d5864;
+  --link:#b5420d; --ok:#1b7a3a; --warn:#b45309; --err:#b3261e;
+  --r:12px; --r-lg:24px;
+  --shadow-float:0 14px 44px rgba(17,24,31,.28);
+  --ease:cubic-bezier(.22,1,.36,1); --ease-in:cubic-bezier(.4,0,1,1);
+  --d-fast:120ms; --d:200ms; --d-slow:420ms;
+  --chev:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14'%3E%3Cpath d='M3 5l4 4 4-4' fill='none' stroke='%2311181f' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --bg:#0f1419; --surface:#182028; --ink:#eef2f5; --muted:#9aa6b2;
+    --ctrl:#6f7c89; --hover:#212b35; --tone:#1b242d;
+    --field:#ff8a4c; --on-field:#11181f; --on-field-2:#4a2208;
+    --quiet:#26313b; --on-quiet:#eef2f5; --on-quiet-2:#9aa6b2;
+    --link:#ff9a68; --ok:#5fd38a; --warn:#f0b44a; --err:#ff9b92;
+    --shadow-float:0 14px 44px rgba(0,0,0,.6);
+    --chev:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14'%3E%3Cpath d='M3 5l4 4 4-4' fill='none' stroke='%23eef2f5' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  }
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html{-webkit-text-size-adjust:100%;interpolate-size:allow-keywords}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;-webkit-font-smoothing:antialiased}
+body:has(dialog[open]){overflow:hidden}
+button,input,select{font:inherit;color:inherit}
+h1,h2,h3,p{margin:0}
+:focus-visible{outline:3px solid var(--ink);outline-offset:3px}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.ic{width:1em;height:1em;flex:none;display:inline-block}
+
+/* ===== Gerak =====
+   Hanya transform dan opacity (kecuali cincin titik status). Cepat, satu kali, dan
+   dimatikan otomatis kalau pengguna memilih "kurangi gerakan". */
+@keyframes rise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+@keyframes fadeOut{from{opacity:1}to{opacity:0}}
+@keyframes locIn{from{opacity:0;transform:translateY(22px)}to{opacity:1;transform:none}}
+@keyframes locOut{from{opacity:1;transform:none}to{opacity:0;transform:translateY(-22px)}}
+@keyframes ring{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--ok) 55%,transparent)}100%{box-shadow:0 0 0 9px color-mix(in srgb,var(--ok) 0%,transparent)}}
+@keyframes tilePop{from{transform:scale(.93)}to{transform:none}}
+@keyframes tileRing{from{opacity:.9;transform:scale(1)}to{opacity:0;transform:scale(1.14)}}
+@keyframes dlgIn{from{opacity:0;transform:translateY(14px) scale(.98)}to{opacity:1;transform:none}}
+@keyframes dlgOut{from{opacity:1;transform:none}to{opacity:0;transform:translateY(10px) scale(.98)}}
+@keyframes sheetIn{from{transform:translateY(100%)}to{transform:none}}
+@keyframes sheetOut{from{transform:none}to{transform:translateY(100%)}}
+@keyframes ironRun{0%,100%{transform:translateX(0)}50%{transform:translateX(min(46vw,180px))}}
+@keyframes breathe{0%,100%{opacity:.35}50%{opacity:.7}}
+.enter{animation:rise var(--d-slow) var(--ease) both;animation-delay:calc(var(--i,0) * 70ms)}
+
+/* ===== Kerangka ===== */
+.app{max-width:1080px;margin:0 auto;padding:16px 16px 56px}
+.top{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:4px 0 18px}
+.brand h1{font-size:1.375rem;font-weight:800;letter-spacing:-.03em;line-height:1.15}
+.brand p{font-size:.8125rem;color:var(--muted);margin-top:2px}
+.pick-lorong{display:flex;align-items:center;gap:8px;font-size:.875rem;font-weight:600;color:var(--muted)}
+.pick-lorong select{appearance:none;-webkit-appearance:none;min-height:44px;padding:0 38px 0 14px;border:1px solid var(--ctrl);border-radius:var(--r);background:var(--surface) var(--chev) no-repeat right 13px center/14px;color:var(--ink);font-weight:600;cursor:pointer}
+
+.notice{margin:0 0 14px;padding:10px 14px;border-radius:var(--r);background:var(--tone);font-size:.875rem;line-height:1.45}
+.notice.error{display:flex;gap:12px;align-items:center;justify-content:space-between;background:color-mix(in srgb,var(--err) 12%,var(--surface))}
+.notice.error .btn{min-height:44px;padding:0 14px;flex:none}
+
+.layout{display:grid;gap:36px}
+.sec-h{font-size:1.125rem;font-weight:800;letter-spacing:-.015em;line-height:1.25}
+.sec-h .where{color:var(--muted);font-weight:600}
+.hint{color:var(--muted);font-size:.9375rem;margin-top:4px}
+
+/* ===== Hero: jawaban atas "Setrika sekarang ada di mana?" ===== */
+.hero{--hf:var(--field);--hi:var(--on-field);--hi2:var(--on-field-2);
+  padding:20px 20px 22px;border-radius:var(--r-lg);background:var(--hf);color:var(--hi);
+  transition:background-color var(--d-slow) var(--ease),color var(--d-slow) var(--ease)}
+.hero.quiet{--hf:var(--quiet);--hi:var(--on-quiet);--hi2:var(--on-quiet-2)}
+.hero-top{display:flex;align-items:center;gap:10px}
+.hero-top .ic{font-size:26px;color:var(--hi)}
+.hero-top h2{font-size:.9375rem;font-weight:600;line-height:1.3;color:var(--hi2)}
+.stage{position:relative;margin-top:20px}
+.loc{font-size:1rem;line-height:1;font-weight:800;letter-spacing:-.04em;overflow-wrap:anywhere}
+.loc-k{display:block;font-size:clamp(1.125rem,5vw,1.5rem);line-height:1.2;font-weight:600;letter-spacing:-.01em;color:var(--hi2);margin-bottom:.15rem}
+.loc-n{display:block;line-height:.92}
+.n-xl .loc-n{font-size:clamp(5.25rem,29vw,9.5rem)}
+.n-l .loc-n{font-size:clamp(3.4rem,18vw,6rem)}
+.n-m .loc-n{font-size:clamp(2.1rem,10.5vw,3.5rem);line-height:1.02;letter-spacing:-.03em}
+.loc.dim{color:var(--hi2)}
+.stage.changed .loc .loc-n{animation:locIn var(--d-slow) var(--ease) both}
+.stage.changed .loc .loc-k{animation:fadeIn var(--d-slow) var(--ease) both}
+.stage.changed.keep-k .loc .loc-k{animation:none}
+.stage.changed .sub,.stage.changed .fresh{animation:fadeIn var(--d-slow) var(--ease) 90ms both}
+.loc-old{position:absolute;left:0;top:0;width:100%;pointer-events:none}
+.loc-old .loc-n,.loc-old .loc-k{animation:locOut var(--d) var(--ease-in) both}
+.stage.keep-k .loc-old .loc-k{visibility:hidden}
+.sub{margin-top:16px;font-size:1.0625rem;font-weight:600}
+.fresh{display:inline-flex;align-items:flex-start;gap:9px;margin-top:14px;padding:9px 13px;border-radius:14px;background:var(--surface);color:var(--ink);font-size:.9375rem;line-height:1.4;max-width:100%}
+.sub+.fresh{margin-top:10px}
+.dot{flex:none;width:10px;height:10px;margin-top:6px;border-radius:50%;background:var(--muted)}
+.fresh-ok .dot{background:var(--ok)}
+.stage.changed .fresh-ok .dot{animation:ring 2.2s var(--ease) 3 .3s}
+.fresh-stale .dot{background:var(--warn)}
+.hero .btn{margin-top:22px}
+.note{margin-top:14px;font-size:.8125rem;line-height:1.45;color:var(--hi2)}
+
+.skel{display:grid;gap:12px}
+.skel-t{font-size:.9375rem;color:var(--hi2)}
+.iron-run{position:relative;height:44px}
+.iron-run .ic{font-size:44px;color:var(--hi);animation:ironRun 1.4s ease-in-out infinite}
+.bar{display:block;height:26px;border-radius:8px;background:var(--hi);animation:breathe 1.4s ease-in-out infinite}
+.bar.b1{width:72%}
+.bar.b2{width:44%;height:16px;animation-delay:.2s}
+
+/* ===== Tombol ===== */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:52px;padding:0 20px;border:1px solid var(--ctrl);border-radius:var(--r);background:transparent;color:var(--ink);font-weight:700;cursor:pointer;
+  transition:transform var(--d-fast) var(--ease),background-color var(--d) var(--ease),box-shadow var(--d) var(--ease)}
+.btn:active{transform:scale(.97)}
+.btn.primary{background:var(--ink);border-color:var(--ink);color:var(--bg)}
+.btn.block{width:100%}
+.btn[disabled]{opacity:.6;cursor:default}
+.btn[disabled]:active{transform:none}
+.link{min-height:44px;padding:0 2px;border:0;background:none;color:var(--link);font-weight:700;text-decoration:underline;text-underline-offset:3px;cursor:pointer}
+.link:active{opacity:.7}
+@media (hover:hover){
+  .btn:not([disabled]):hover{background:var(--hover)}
+  .btn.primary:not([disabled]):hover{background:var(--ink);box-shadow:0 8px 20px rgba(17,24,31,.28);transform:translateY(-1px)}
+  .btn.primary:not([disabled]):active{transform:scale(.97)}
+}
+
+/* ===== Denah ===== */
+.floor{display:grid;grid-template-columns:1fr 36px 1fr;gap:10px;margin-top:16px}
+.col{display:flex;flex-direction:column;gap:10px}
+.corridor{display:flex;align-items:center;justify-content:center;border-radius:var(--r);background:var(--tone)}
+.corridor span{writing-mode:vertical-rl;font-size:.8125rem;font-weight:700;letter-spacing:.06em;color:var(--muted)}
+.room{position:relative;min-height:58px;padding:8px 14px;border:1px solid var(--ctrl);border-radius:var(--r);background:var(--surface);display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:1px;text-align:left;cursor:pointer;
+  font-size:1.125rem;font-weight:800;letter-spacing:-.01em;line-height:1.2;
+  transition:transform var(--d) var(--ease),background-color var(--d) var(--ease),border-color var(--d) var(--ease),box-shadow var(--d) var(--ease)}
+.room:active{transform:scale(.97)}
+.room small{display:inline-flex;align-items:center;gap:4px;font-size:.75rem;font-weight:700;letter-spacing:0}
+.room small .ic{font-size:15px}
+.room.here,.room.here:hover{background:var(--field);border-color:var(--field);color:var(--on-field)}
+.room.pop{animation:tilePop var(--d-slow) var(--ease) both}
+.room.pop::after{content:"";position:absolute;inset:-3px;border-radius:calc(var(--r) + 3px);border:2px solid var(--field);pointer-events:none;animation:tileRing 650ms var(--ease) both}
+@media (hover:hover){
+  .room:not(.here):hover{background:var(--hover);transform:translateY(-2px);box-shadow:0 6px 14px rgba(17,24,31,.12)}
+  .room:not(.here):active{transform:scale(.97)}
+}
+
+/* ===== Riwayat ===== */
+.day{margin:20px 0 2px;font-size:.8125rem;font-weight:700;color:var(--muted)}
+.hist{list-style:none;margin:0;padding:0}
+.hist li{display:grid;grid-template-columns:3.1rem 12px 1fr;column-gap:10px;align-items:baseline;padding:10px 0}
+.hist time{font-variant-numeric:tabular-nums;color:var(--muted);font-size:.9375rem}
+.hist .hd{width:9px;height:9px;border-radius:50%;background:var(--ctrl);align-self:center;justify-self:center}
+.hist li.cur .hd{background:var(--ink);width:11px;height:11px}
+.hist .hl{font-weight:700;overflow-wrap:anywhere}
+.hist li.cur .hl{font-size:1.0625rem}
+.hist .who{grid-column:3;color:var(--muted);font-size:.875rem;margin-top:-2px}
+.empty{color:var(--muted);padding:14px 16px;margin-top:10px;border-radius:var(--r);background:var(--tone);font-size:.9375rem}
+.more{display:grid;grid-template-rows:0fr;visibility:hidden;transition:grid-template-rows var(--d-slow) var(--ease),visibility 0s linear var(--d-slow)}
+.more.open{grid-template-rows:1fr;visibility:visible;transition:grid-template-rows var(--d-slow) var(--ease),visibility 0s}
+.more-in{overflow:hidden;min-height:0}
+#btnMore{margin-top:6px}
+
+/* ===== Cara pakai ===== */
+details.help{border-radius:var(--r);background:var(--tone);padding:0 16px}
+details.help summary{min-height:52px;display:flex;align-items:center;justify-content:space-between;font-weight:700;cursor:pointer;list-style:none}
+details.help summary::-webkit-details-marker{display:none}
+details.help summary::after{content:"";width:9px;height:9px;margin-right:4px;border-right:2px solid currentColor;border-bottom:2px solid currentColor;transform:rotate(45deg);transition:transform var(--d) var(--ease)}
+details.help[open] summary::after{transform:rotate(-135deg) translate(-2px,-2px)}
+details.help::details-content{block-size:0;overflow:clip;transition:block-size var(--d-slow) var(--ease),content-visibility var(--d-slow) allow-discrete}
+details.help[open]::details-content{block-size:auto}
+details.help ol{margin:0;padding:0 0 4px 20px}
+details.help li{margin:6px 0}
+details.help p{padding-bottom:16px;font-size:.875rem;color:var(--muted)}
+
+/* ===== Dialog ===== */
+dialog{border:0;border-radius:var(--r-lg);padding:0;width:min(480px,calc(100% - 24px));max-height:min(680px,calc(100dvh - 24px));background:var(--surface);color:var(--ink);box-shadow:var(--shadow-float);overflow:hidden}
+dialog[open]{display:flex;flex-direction:column;animation:dlgIn var(--d-slow) var(--ease) both}
+dialog[open]::backdrop{background:rgba(8,12,16,.55);animation:fadeIn var(--d) var(--ease) both}
+dialog.closing{animation:dlgOut var(--d) var(--ease-in) both}
+dialog.closing::backdrop{animation:fadeOut var(--d) var(--ease-in) both}
+.pane{display:flex;flex-direction:column;min-height:0;flex:1 1 auto;padding:22px 20px 20px}
+.pane h2{font-size:1.375rem;font-weight:800;letter-spacing:-.02em;line-height:1.2;margin-bottom:16px}
+label.lbl{display:block;font-size:.875rem;font-weight:700;margin:0 0 6px}
+input[type=text],input[type=search]{width:100%;min-height:50px;padding:0 14px;border:1px solid var(--ctrl);border-radius:var(--r);background:var(--bg);font-size:16px}
+input::placeholder{color:var(--muted);opacity:1}
+#opts{display:flex;flex-direction:column;flex:1 1 auto;min-height:0;margin-top:12px}
+.room-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;flex:0 1 auto;min-height:0;overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;padding:6px;margin:-6px;width:calc(100% + 12px)}
+.opt{min-height:50px;padding:6px 12px;border:1px solid var(--ctrl);border-radius:var(--r);background:var(--surface);font-weight:800;font-size:1.0625rem;cursor:pointer;display:flex;flex-direction:column;align-items:flex-start;justify-content:center;text-align:left;
+  transition:transform var(--d-fast) var(--ease),background-color var(--d) var(--ease)}
+.opt small{font-size:.75rem;color:var(--muted);font-weight:700}
+.opt:active{transform:scale(.97)}
+.opt[disabled]{background:var(--tone);border-color:transparent;cursor:default}
+.opt[disabled]:active{transform:none}
+.opt.wide{flex:none;width:100%;margin-top:8px;flex-direction:row;align-items:center;justify-content:space-between;font-weight:700}
+.opt.wide:first-of-type{margin-top:14px}
+@media (hover:hover){.opt:not([disabled]):hover{background:var(--hover)}}
+.err{min-height:1.4em;margin-top:6px;font-size:.875rem;color:var(--err);font-weight:600}
+.field{margin-top:4px}
+.field .note{color:var(--muted);margin-top:8px}
+.actions{display:flex;gap:8px;margin-top:16px}
+.actions .btn{flex:1}
+#otherBox{margin-top:12px;padding-top:14px;border-top:0;background:none}
+#otherBox .btn{margin-top:10px}
+#cfBack{align-self:flex-start;margin-top:8px}
+#cfTitle{overflow-wrap:anywhere}
+.pane h2:focus-visible{outline:2px solid var(--ctrl);outline-offset:4px;border-radius:6px}
+
+/* ===== Toast ===== */
+.toast{position:fixed;left:50%;bottom:max(20px,env(safe-area-inset-bottom));transform:translate(-50%,18px);opacity:0;pointer-events:none;display:flex;align-items:center;gap:10px;max-width:calc(100% - 32px);padding:12px 18px;border-radius:14px;background:var(--ink);color:var(--bg);font-weight:700;font-size:.9375rem;box-shadow:var(--shadow-float);z-index:30;
+  transition:opacity var(--d) var(--ease),transform var(--d-slow) var(--ease)}
+.toast.show{opacity:1;transform:translate(-50%,0)}
+.toast .ic{font-size:18px;color:#5fd38a}
+.toast .ic[hidden]{display:none}
+@media (prefers-color-scheme:dark){.toast .ic{color:#157a3f}}
+
+/* ===== Layar lebar ===== */
+@media (min-width:960px){
+  .app{padding:28px 32px 80px}
+  .top{padding-bottom:28px}
+  .layout{grid-template-columns:minmax(0,7fr) minmax(0,5fr);grid-template-areas:"hero plan" "hist plan" "help plan";grid-template-rows:auto auto 1fr;gap:40px 56px;align-items:start}
+  .hero{grid-area:hero;padding:32px 36px 34px}
+  .plan{grid-area:plan;position:sticky;top:24px}
+  .history{grid-area:hist}
+  details.help{grid-area:help}
+  .hero .btn{width:auto;min-width:240px}
+  .hero-top h2{font-size:1rem}
+}
+@media (max-width:520px){
+  dialog{margin:auto 0 0;width:100%;max-width:100%;max-height:min(640px,90dvh);border-radius:var(--r-lg) var(--r-lg) 0 0}
+  dialog[open]{animation:sheetIn var(--d-slow) var(--ease) both}
+  dialog.closing{animation:sheetOut var(--d) var(--ease-in) both}
+  .pane{padding:20px 16px calc(16px + env(safe-area-inset-bottom))}
+}
+@media (max-width:360px){.pick-lorong span{display:none}}
+
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;animation-delay:0s!important;transition-duration:.001ms!important;transition-delay:0s!important}
+  .toast{transform:translateX(-50%)}
+}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <symbol id="i-iron" viewBox="0 0 24 24">
+    <path fill-rule="evenodd" d="M2 20v-1.6L5.4 10.5h9.1c2.9 0 5.4 1.8 6.5 4.5l1.4 3.4c.4 1-.3 1.6-1.2 1.6zM9.3 14.5a1.1 1.1 0 1 0 0 2.2 1.1 1.1 0 1 0 0-2.2z" fill="currentColor"/>
+    <path d="M7.2 10.4 8.6 7.2c.3-.7.9-1 1.6-1h3.9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  </symbol>
+  <symbol id="i-check" viewBox="0 0 20 20">
+    <path d="M4.5 10.5l3.6 3.6 7.4-8" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+  </symbol>
+</svg>
+<noscript><p style="padding:16px">SetrikaMap membutuhkan JavaScript untuk berjalan.</p></noscript>
+
+<div class="app">
+  <header class="top enter" style="--i:0">
+    <div class="brand">
+      <h1>SetrikaMap</h1>
+      <p>Lokasi setrika bersama asrama</p>
+    </div>
+    <label class="pick-lorong" id="lorongWrap" hidden><span>Lorong</span>
+      <select id="lorongSel"></select>
+    </label>
+  </header>
+
+  <p class="notice enter" id="demo" style="--i:1" hidden>Mode demo: data hanya tersimpan di browser ini. Hubungkan database (lihat CONFIG) agar semua penghuni melihat data yang sama.</p>
+  <div id="banner"></div>
+
+  <main class="layout">
+    <section class="hero enter quiet" id="hero" style="--i:2" aria-labelledby="stQ">
+      <div class="hero-top">
+        <svg class="ic" aria-hidden="true"><use href="#i-iron"/></svg>
+        <h2 id="stQ">Setrika sekarang ada di mana?</h2>
+      </div>
+      <div class="stage" id="stBody"></div>
+      <button type="button" class="btn primary block" id="btnUpdate">Perbarui Lokasi</button>
+      <p class="note">Lokasi diperbarui manual oleh penghuni, bukan pelacakan otomatis.</p>
+    </section>
+
+    <section class="plan enter" style="--i:3" aria-labelledby="dnH">
+      <h2 class="sec-h" id="dnH">Denah <span class="where" id="planName"></span></h2>
+      <p class="hint">Setrika pindah ke kamarmu? Ketuk nomor kamar di bawah.</p>
+      <div class="floor">
+        <div class="col" id="colL"></div>
+        <div class="corridor" aria-hidden="true"><span>Lorong</span></div>
+        <div class="col" id="colR"></div>
+      </div>
+    </section>
+
+    <section class="history enter" style="--i:4" aria-labelledby="hsH">
+      <h2 class="sec-h" id="hsH">Riwayat Lokasi</h2>
+      <div id="hist"></div>
+      <button type="button" class="link" id="btnMore" aria-expanded="false" aria-controls="histMore" hidden></button>
+    </section>
+
+    <details class="help enter" style="--i:5">
+      <summary>Cara pakai</summary>
+      <ol>
+        <li>Cek lokasi dan waktu pembaruan di bagian atas.</li>
+        <li>Kalau kamu membawa setrika ke kamarmu, ketuk Perbarui Lokasi lalu pilih kamarmu.</li>
+        <li>Selesai dipakai? Perbarui lagi ke Tempat penyimpanan atau kamar berikutnya.</li>
+      </ol>
+      <p>Karena diisi manual, cek waktu pembaruannya. Kalau sudah lama, setrikanya mungkin sudah pindah.</p>
+    </details>
+  </main>
+</div>
+
+<dialog id="dlg">
+  <section class="pane" id="panePick">
+    <h2 id="pkTitle" tabindex="-1">Perbarui Lokasi</h2>
+    <label class="lbl" for="q">Cari kamar</label>
+    <input id="q" type="search" inputmode="search" autocomplete="off" maxlength="20" placeholder="Contoh: 275">
+    <div id="opts"></div>
+    <form id="otherBox" hidden novalidate>
+      <label class="lbl" for="otherIn">Lokasi lain</label>
+      <input id="otherIn" type="text" maxlength="40" autocomplete="off" placeholder="Contoh: Dapur lantai 2">
+      <p class="err" id="otherErr" role="alert"></p>
+      <button type="submit" class="btn primary block">Lanjut</button>
+    </form>
+    <div class="actions"><button type="button" class="btn" id="pkCancel">Batalkan</button></div>
+  </section>
+
+  <section class="pane" id="paneConfirm" hidden>
+    <h2 id="cfTitle" tabindex="-1"></h2>
+    <div class="field">
+      <label class="lbl" for="fName">Nama (opsional)</label>
+      <input id="fName" type="text" maxlength="30" autocomplete="name" placeholder="Contoh: Rani">
+      <p class="note">Tampil di riwayat agar teman tahu siapa yang membawa.</p>
+    </div>
+    <p class="err" id="cfErr" role="alert"></p>
+    <div class="actions">
+      <button type="button" class="btn" id="cfCancel">Batalkan</button>
+      <button type="button" class="btn primary" id="cfOk">Konfirmasi</button>
+    </div>
+    <button type="button" class="link" id="cfBack">Pilih lokasi lain</button>
+  </section>
+</dialog>
+
+<div class="toast" id="toast" role="status"><svg class="ic" aria-hidden="true" hidden><use href="#i-check"/></svg><span id="toastTxt"></span></div>
+<div class="sr" id="announce" aria-live="polite"></div>
+
+<script>
+"use strict";
+
+/* ===== Konfigurasi =====
+   FIREBASE_DB_URL kosong = mode demo (data hanya di browser ini).
+   Isi dengan URL Realtime Database agar semua penghuni melihat data yang sama, contoh:
+   "https://nama-proyek-default-rtdb.asia-southeast1.firebasedatabase.app"
+   Untuk lorong lain, salin satu objek di LORONG dan ubah id, nama, dan daftar kamar.
+   Format kamar: [id, label yang ditampilkan]. */
+const CONFIG = {
+  FIREBASE_DB_URL: "",
+  FRESH_MINUTES: 60,
+  STALE_HOURS: 3,
+  POLL_MS: 5000,
+  HISTORY_MAX: 20,
+  HISTORY_SHOWN: 6,
+  LORONG: [
+    {
+      id: "270",
+      name: "Lorong 270-280",
+      storage: "Tempat penyimpanan",
+      left:  [["280","SR 280"],["278","278"],["276","276"],["274","274"],["270","270"]],
+      right: [["279","279"],["277","277"],["275","275"],["273","273"],["272","272"],["271","271"]]
+    }
+  ]
+};
+
+/* ===== Utilitas ===== */
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const MONTHS = ["Jan","Feb","Mar","Apr","Mei","Jun","Jul","Agu","Sep","Okt","Nov","Des"];
+const reduceMotion = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+function clock(ts){
+  const d = new Date(ts);
+  return String(d.getHours()).padStart(2,"0") + "." + String(d.getMinutes()).padStart(2,"0");
+}
+function sameDay(a, b){ return new Date(a).toDateString() === new Date(b).toDateString(); }
+function absTime(ts){
+  if (sameDay(ts, Date.now())) return clock(ts);
+  const d = new Date(ts);
+  return d.getDate() + " " + MONTHS[d.getMonth()] + ", " + clock(ts);
+}
+function dayLabel(ts){
+  const now = Date.now();
+  if (sameDay(ts, now)) return "Hari ini";
+  if (sameDay(ts, now - 86400000)) return "Kemarin";
+  const d = new Date(ts);
+  return d.getDate() + " " + MONTHS[d.getMonth()] + (d.getFullYear() !== new Date().getFullYear() ? " " + d.getFullYear() : "");
+}
+function relTime(ts, now = Date.now()){
+  const m = Math.floor((now - ts) / 60000);
+  if (m < 1) return "baru saja";
+  if (m < 60) return m + " menit lalu";
+  const h = Math.floor(m / 60);
+  if (h < 24) return h + " jam lalu";
+  return Math.floor(h / 24) + " hari lalu";
+}
+function freshness(ts, now = Date.now()){
+  const age = now - ts;
+  if (age < CONFIG.FRESH_MINUTES * 60000) return "fresh";
+  if (age < CONFIG.STALE_HOURS * 3600000) return "recent";
+  return "stale";
+}
+
+/* ===== Lokasi =====
+   Disimpan sebagai teks: "room:275", "storage", atau "other:Dapur lantai 2". */
+const curL = () => CONFIG.LORONG.find(l => l.id === cur);
+const roomsOf = L => [...L.left, ...L.right].map(([id, label]) => ({id, label}))
+  .sort((a, b) => a.id.localeCompare(b.id, "id", {numeric: true}));
+function parseLoc(s){
+  if (!s) return null;
+  if (s === "storage") return {kind: "storage"};
+  const i = s.indexOf(":");
+  return i < 0 ? null : {kind: s.slice(0, i), value: s.slice(i + 1)};
+}
+function locText(s, L){
+  const p = parseLoc(s);
+  if (!p) return "Belum diketahui";
+  if (p.kind === "storage") return L.storage;
+  if (p.kind === "room"){
+    const r = roomsOf(L).find(x => x.id === p.value);
+    return "Kamar " + (r ? r.label : p.value);
+  }
+  return p.value;
+}
+function matchRoom(L, text){
+  const t = text.toLowerCase().replace(/^kamar\s*/, "").replace(/\s+/g, "");
+  return roomsOf(L).find(r => r.id.toLowerCase() === t || r.label.toLowerCase().replace(/\s+/g, "") === t) || null;
+}
+
+/* Merapikan data dari penyimpanan, termasuk format lama (field "room"). */
+function norm(d){
+  d = d || {};
+  const conv = x => x.loc || (x.room ? "room:" + x.room : "storage");
+  let hist = Array.isArray(d.history) ? d.history : Object.values(d.history || {});
+  hist = hist.filter(h => h && h.at).map(h => ({loc: conv(h), name: h.name || h.holder || "", at: h.at}))
+             .sort((a, b) => b.at - a.at);
+  const loc = d.loc || (d.room ? "room:" + d.room : (d.at ? "storage" : null));
+  return {loc, name: d.name || d.holder || "", at: d.at || null, history: hist};
+}
+
+/* ===== Penyimpanan ===== */
+const CLOUD = (CONFIG.FIREBASE_DB_URL || "").replace(/\/+$/, "");
+const Store = {
+  mode: CLOUD ? "cloud" : "local",
+  async load(id){
+    if (CLOUD){
+      const r = await fetch(`${CLOUD}/setrikamap/${encodeURIComponent(id)}.json`, {cache: "no-store"});
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return norm(await r.json());
+    }
+    let raw = null;
+    try { raw = JSON.parse(localStorage.getItem("setrikamap.v2." + id)); } catch (e) { raw = null; }
+    return norm(raw);
+  },
+  async save(id, data){
+    if (CLOUD){
+      const r = await fetch(`${CLOUD}/setrikamap/${encodeURIComponent(id)}.json`, {
+        method: "PUT", headers: {"Content-Type": "application/json"}, body: JSON.stringify(data)
+      });
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return;
+    }
+    localStorage.setItem("setrikamap.v2." + id, JSON.stringify(data));
+  }
+};
+const profile = {
+  get(){ try { return JSON.parse(localStorage.getItem("setrikamap.profile")) || {}; } catch (e) { return {}; } },
+  set(p){ try { localStorage.setItem("setrikamap.profile", JSON.stringify(p)); } catch (e) {} }
+};
+
+/* ===== State ===== */
+let cur = CONFIG.LORONG[0].id;
+let S = norm(null);
+let loading = true, loaded = false, error = "", showAllHist = false;
+let pendingLoc = null;
+let prevKey = null;        // lokasi yang terakhir ditampilkan di hero (untuk animasi pergantian)
+let prevRoomKey;           // kamar yang terakhir ditandai di denah (untuk animasi tanda)
+
+/* ===== Render ===== */
+function renderTop(){
+  $("#demo").hidden = Store.mode !== "local";
+  const wrap = $("#lorongWrap");
+  wrap.hidden = CONFIG.LORONG.length < 2;
+  $("#lorongSel").innerHTML = CONFIG.LORONG.map(l =>
+    `<option value="${esc(l.id)}"${l.id === cur ? " selected" : ""}>${esc(l.name)}</option>`).join("");
+}
+function renderBanner(){
+  $("#banner").innerHTML = error
+    ? `<div class="notice error" role="alert"><span>${esc(error)}</span><button type="button" class="btn" id="btnRetry">Coba lagi</button></div>`
+    : "";
+}
+
+function locHtml(s, L){
+  const p = parseLoc(s);
+  if (p && p.kind === "room"){
+    const r = roomsOf(L).find(x => x.id === p.value);
+    const label = r ? r.label : p.value;
+    return `<p class="loc ${label.length <= 4 ? "n-xl" : "n-l"}"><span class="loc-k">Kamar</span> <span class="loc-n">${esc(label)}</span></p>`;
+  }
+  return `<p class="loc n-m"><span class="loc-n">${esc(locText(s, L))}</span></p>`;
+}
+const textHtml = t => `<p class="loc n-m dim"><span class="loc-n">${esc(t)}</span></p>`;
+
+function renderStatus(){
+  const box = $("#stBody"), hero = $("#hero"), L = curL();
+  let html = "", tone = "quiet", key = null, known = false;
+
+  if (loading && !loaded){
+    html = `<div class="skel" role="status"><div class="iron-run" aria-hidden="true"><svg class="ic"><use href="#i-iron"/></svg></div>
+      <i class="bar b1" aria-hidden="true"></i><i class="bar b2" aria-hidden="true"></i><p class="skel-t">Memuat lokasi...</p></div>`;
+  } else if (error && !loaded){
+    html = textHtml("Lokasi belum bisa dimuat") +
+      `<p class="fresh fresh-stale"><span class="dot"></span><span>Cek koneksi internet, lalu coba lagi.</span></p>`;
+  } else if (!S.loc || !S.at){
+    html = textHtml("Belum diketahui") +
+      `<p class="fresh"><span class="dot"></span><span>Belum ada yang memperbarui lokasi setrika di lorong ini. Kalau kamu tahu, perbarui sekarang.</span></p>`;
+  } else {
+    known = true; key = S.loc;
+    const f = freshness(S.at), rel = relTime(S.at), when = absTime(S.at);
+    tone = f === "stale" ? "quiet" : "warm";
+    const line = f === "stale"
+      ? `Terakhir diperbarui ${rel} (${when}). Lokasi mungkin sudah berubah.`
+      : `Diperbarui ${rel} (${when})`;
+    const p = parseLoc(S.loc);
+    const sub = S.name ? `Dibawa ${esc(S.name)}` : (p && p.kind === "storage" ? "Bisa langsung diambil" : "");
+    html = locHtml(S.loc, L) +
+      (sub ? `<p class="sub">${sub}</p>` : "") +
+      `<p class="fresh fresh-${f === "fresh" ? "ok" : (f === "stale" ? "stale" : "mid")}"><span class="dot"></span><span>${esc(line)}</span></p>`;
+  }
+
+  /* Pergantian lokasi: yang lama meluncur naik dan memudar, yang baru muncul dari bawah. */
+  const changed = known && key !== prevKey;
+  const old = box.querySelector(".loc");
+  let ghost = null;
+  if (changed && old){
+    ghost = old.cloneNode(true);
+    ghost.classList.remove("loc");
+    ghost.classList.add("loc-old");
+    ghost.setAttribute("aria-hidden", "true");
+  }
+  /* Kalau lama dan baru sama-sama kamar, label "Kamar" tetap diam; hanya angkanya yang bergerak. */
+  const keepLabel = !!(ghost && ghost.querySelector(".loc-k") && html.includes('class="loc-k"'));
+  box.className = "stage" + (changed ? " changed" : "") + (keepLabel ? " keep-k" : "");
+  box.innerHTML = html;
+  if (ghost){
+    box.appendChild(ghost);
+    const drop = () => ghost.remove();
+    ghost.addEventListener("animationend", drop, {once: true});
+    setTimeout(drop, 450);
+  }
+  hero.classList.toggle("quiet", tone === "quiet");
+  prevKey = known ? key : null;
+}
+
+function renderPlan(){
+  const L = curL();
+  $("#planName").textContent = L.name;
+  const roomNow = S.loc && S.loc.startsWith("room:") ? S.loc.slice(5) : null;
+  const pop = prevRoomKey !== undefined && roomNow !== null && roomNow !== prevRoomKey;
+  const btn = ([id, label]) => {
+    const here = roomNow === id;
+    return `<button type="button" class="room${here ? " here" : ""}${here && pop ? " pop" : ""}" data-room="${esc(id)}" aria-label="Kamar ${esc(label)}${here ? ", setrika ada di sini" : ""}">
+      <span>${esc(label)}</span>${here ? `<small><svg class="ic" aria-hidden="true"><use href="#i-iron"/></svg>Setrika di sini</small>` : ""}</button>`;
+  };
+  $("#colL").innerHTML = L.left.map(btn).join("");
+  $("#colR").innerHTML = L.right.map(btn).join("");
+  prevRoomKey = roomNow;
+}
+
+function syncMore(){
+  const more = $("#btnMore");
+  more.setAttribute("aria-expanded", String(showAllHist));
+  more.textContent = showAllHist ? "Tampilkan lebih sedikit" : `Lihat semua (${S.history.length})`;
+}
+function renderHist(){
+  const box = $("#hist"), more = $("#btnMore"), L = curL();
+  if (!S.history.length){
+    box.innerHTML = `<p class="empty">${loading && !loaded ? "Memuat riwayat..." : "Belum ada riwayat. Perubahan lokasi akan muncul di sini."}</p>`;
+    more.hidden = true; return;
+  }
+  const N = CONFIG.HISTORY_SHOWN;
+  let html = "", lastDay = "", hasMore = false;
+  S.history.forEach((h, i) => {
+    const d = dayLabel(h.at);
+    if (i === N){
+      html += "</ul>";
+      html += `<div class="more${showAllHist ? " open" : ""}" id="histMore"><div class="more-in">`;
+      html += d !== lastDay ? `<h3 class="day">${esc(d)}</h3><ul class="hist">` : `<ul class="hist">`;
+      lastDay = d; hasMore = true;
+    } else if (d !== lastDay){
+      if (lastDay) html += "</ul>";
+      html += `<h3 class="day">${esc(d)}</h3><ul class="hist">`;
+      lastDay = d;
+    }
+    html += `<li${i === 0 ? ' class="cur"' : ""}><time datetime="${new Date(h.at).toISOString()}">${clock(h.at)}</time><i class="hd" aria-hidden="true"></i>
+      <span class="hl">${esc(locText(h.loc, L))}</span>${h.name ? `<span class="who">${esc(h.name)}</span>` : ""}</li>`;
+  });
+  box.innerHTML = html + "</ul>" + (hasMore ? "</div></div>" : "");
+  more.hidden = !hasMore;
+  if (hasMore) syncMore();
+}
+function render(){ renderTop(); renderBanner(); renderStatus(); renderPlan(); renderHist(); }
+
+/* ===== Data ===== */
+async function refresh(silent){
+  const id = cur;
+  if (!silent){ loading = true; renderStatus(); renderHist(); }
+  try {
+    const data = await Store.load(id);
+    if (id !== cur) return;
+    S = data; error = ""; loaded = true;
+  } catch (e){
+    if (id !== cur) return;
+    error = "Tidak bisa memuat lokasi setrika. Cek koneksi internet, lalu coba lagi.";
+  }
+  loading = false; render();
+}
+function selectLorong(id, fromHash){
+  if (!CONFIG.LORONG.some(l => l.id === id)) id = CONFIG.LORONG[0].id;
+  cur = id; S = norm(null); loaded = false; showAllHist = false; prevRoomKey = undefined;
+  if (!fromHash) { try { history.replaceState(null, "", "#l=" + encodeURIComponent(id)); } catch (e) {} }
+  refresh(false);
+}
+
+/* ===== Dialog ===== */
+const dlg = $("#dlg");
+function openDialog(){
+  dlg.classList.remove("closing");
+  if (typeof dlg.showModal === "function") { if (!dlg.open) dlg.showModal(); }
+  else dlg.setAttribute("open", "");
+}
+function closeDialog(){
+  if (!dlg.open && !dlg.hasAttribute("open")) return;
+  const finish = () => {
+    dlg.classList.remove("closing");
+    if (typeof dlg.close === "function") dlg.close(); else dlg.removeAttribute("open");
+  };
+  if (reduceMotion() || typeof dlg.close !== "function"){ finish(); return; }
+  if (dlg.classList.contains("closing")) return;
+  dlg.classList.add("closing");
+  dlg.addEventListener("animationend", function h(e){
+    if (e.target !== dlg) return;
+    dlg.removeEventListener("animationend", h);
+    if (dlg.classList.contains("closing")) finish();
+  });
+  setTimeout(() => { if (dlg.classList.contains("closing")) finish(); }, 360);
+}
+function showPane(name){
+  $("#panePick").hidden = name !== "pick";
+  $("#paneConfirm").hidden = name !== "confirm";
+  const title = name === "pick" ? $("#pkTitle") : $("#cfTitle");
+  dlg.setAttribute("aria-labelledby", title.id);
+  title.focus();   // fokus ke judul, bukan kolom isian, agar keyboard HP tidak langsung muncul
+}
+function renderOpts(){
+  const L = curL(), q = $("#q").value.trim().toLowerCase();
+  const rooms = roomsOf(L).filter(r => !q || r.label.toLowerCase().includes(q) || r.id.toLowerCase().includes(q));
+  const atStorage = S.loc === "storage";
+  let h = "";
+  if (rooms.length){
+    h += `<div class="room-grid">` + rooms.map(r => {
+      const here = S.loc === "room:" + r.id;
+      return `<button type="button" class="opt" data-act="room" data-id="${esc(r.id)}"${here ? " disabled" : ""}><span>${esc(r.label)}</span>${here ? "<small>Sekarang</small>" : ""}</button>`;
+    }).join("") + `</div>`;
+  } else {
+    h += `<p class="empty">Tidak ada kamar bernomor ${esc($("#q").value.trim())}. Pakai Lainnya kalau lokasinya bukan kamar.</p>`;
+  }
+  h += `<button type="button" class="opt wide" data-act="storage"${atStorage ? " disabled" : ""}><span>${esc(L.storage)}</span>${atStorage ? "<small>Sekarang</small>" : ""}</button>`;
+  h += `<button type="button" class="opt wide" data-act="other"><span>Lainnya</span></button>`;
+  $("#opts").innerHTML = h;
+}
+function openPick(){
+  if (loading && !loaded){ toast("Data masih dimuat. Coba lagi sebentar."); return; }
+  $("#q").value = ""; $("#otherIn").value = ""; $("#otherErr").textContent = "";
+  $("#otherBox").hidden = true;
+  renderOpts(); showPane("pick"); openDialog(); $("#pkTitle").focus();
+}
+function openConfirm(loc){
+  const L = curL();
+  pendingLoc = loc;
+  const p = parseLoc(loc);
+  $("#cfTitle").textContent = p.kind === "storage"
+    ? `Setrika dikembalikan ke ${L.storage}?`
+    : `Setrika sekarang di ${locText(loc, L)}?`;
+  $("#fName").value = profile.get().name || "";
+  $("#cfErr").textContent = "";
+  $("#cfOk").disabled = false; $("#cfOk").textContent = "Konfirmasi";
+  showPane("confirm"); openDialog(); $("#cfTitle").focus();
+}
+
+function validateOther(raw){
+  const L = curL();
+  const text = raw.replace(/\s+/g, " ").trim();
+  if (!text) return {error: "Isi lokasinya dulu."};
+  if (text.length < 2) return {error: "Lokasi terlalu pendek."};
+  if (text.length > 40) return {error: "Maksimal 40 karakter."};
+  if (!/^[\p{L}\p{N} .,\-\/()]+$/u.test(text)) return {error: "Pakai huruf, angka, atau tanda baca biasa (. , - /)."};
+  if (!/[\p{L}\p{N}]/u.test(text)) return {error: "Lokasi harus memuat huruf atau angka."};
+  const room = matchRoom(L, text);
+  if (room) return {loc: "room:" + room.id};
+  if (/^(kamar\s*)?[a-z]{0,2}\s?-?\d{1,4}$/i.test(text)) return {error: "Kamar itu tidak ada di " + L.name + ". Pilih dari daftar, atau tulis lokasi lain."};
+  return {loc: "other:" + text};
+}
+
+async function submitConfirm(){
+  const btn = $("#cfOk"), err = $("#cfErr");
+  const name = $("#fName").value.replace(/\s+/g, " ").trim();
+  if (name.length > 30){ err.textContent = "Nama maksimal 30 karakter."; return; }
+  if (!pendingLoc){ err.textContent = "Lokasi belum dipilih."; return; }
+  btn.disabled = true; btn.textContent = "Menyimpan..."; err.textContent = "";
+  try {
+    const fresh = await Store.load(cur);   // ambil riwayat terbaru agar tidak menimpa perubahan orang lain
+    const now = Date.now();
+    const next = {
+      loc: pendingLoc, name, at: now,
+      history: [{loc: pendingLoc, name, at: now}, ...fresh.history].slice(0, CONFIG.HISTORY_MAX)
+    };
+    await Store.save(cur, next);
+    profile.set({name});
+    S = norm(next); loaded = true; error = "";
+    closeDialog(); render();
+    toast("Lokasi setrika berhasil diperbarui.", true);
+    $("#announce").textContent = "Setrika sekarang di " + locText(next.loc, curL());
+  } catch (e){
+    err.textContent = "Gagal menyimpan. Cek koneksi internet, lalu coba lagi.";
+    btn.disabled = false; btn.textContent = "Konfirmasi";
+  }
+}
+
+/* ===== Toast ===== */
+let toastTimer;
+function toast(t, ok){
+  const el = $("#toast");
+  $("#toastTxt").textContent = t;
+  el.querySelector(".ic").hidden = !ok;
+  el.classList.add("show");
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove("show"), 2800);
+}
+
+/* ===== Event ===== */
+$("#btnUpdate").addEventListener("click", openPick);
+$("#lorongSel").addEventListener("change", e => selectLorong(e.target.value, false));
+$("#banner").addEventListener("click", e => { if (e.target.closest("#btnRetry")) refresh(false); });
+$("#btnMore").addEventListener("click", () => {
+  showAllHist = !showAllHist;
+  const m = $("#histMore"); if (m) m.classList.toggle("open", showAllHist);
+  syncMore();
+});
+
+document.querySelector(".floor").addEventListener("click", e => {
+  const b = e.target.closest(".room"); if (!b) return;
+  if (loading && !loaded){ toast("Data masih dimuat. Coba lagi sebentar."); return; }
+  const loc = "room:" + b.dataset.room;
+  if (S.loc === loc){ toast("Setrika sudah tercatat di " + locText(loc, curL()) + "."); return; }
+  openConfirm(loc);
+});
+
+$("#q").addEventListener("input", renderOpts);
+$("#opts").addEventListener("click", e => {
+  const b = e.target.closest(".opt"); if (!b || b.disabled) return;
+  const act = b.dataset.act;
+  if (act === "room") openConfirm("room:" + b.dataset.id);
+  else if (act === "storage") openConfirm("storage");
+  else if (act === "other"){ $("#otherBox").hidden = false; $("#otherIn").focus(); }
+});
+$("#otherBox").addEventListener("submit", e => {
+  e.preventDefault();
+  const r = validateOther($("#otherIn").value);
+  if (r.error){ $("#otherErr").textContent = r.error; $("#otherIn").focus(); return; }
+  if (r.loc === S.loc){ $("#otherErr").textContent = "Setrika sudah tercatat di lokasi itu."; return; }
+  $("#otherErr").textContent = "";
+  openConfirm(r.loc);
+});
+$("#pkCancel").addEventListener("click", closeDialog);
+$("#cfCancel").addEventListener("click", closeDialog);
+$("#cfBack").addEventListener("click", () => { renderOpts(); showPane("pick"); });
+$("#cfOk").addEventListener("click", submitConfirm);
+$("#fName").addEventListener("keydown", e => { if (e.key === "Enter"){ e.preventDefault(); submitConfirm(); } });
+dlg.addEventListener("click", e => { if (e.target === dlg) closeDialog(); });
+dlg.addEventListener("cancel", e => { e.preventDefault(); closeDialog(); });   // tombol Escape ikut animasi tutup
+
+/* ===== Mulai ===== */
+(function init(){
+  const m = /[#&]l=([^&]+)/.exec(location.hash);
+  render();
+  selectLorong(m ? decodeURIComponent(m[1]) : cur, true);
+  setInterval(() => { if (loaded){ renderStatus(); renderHist(); } }, 30000);
+  if (Store.mode === "cloud") setInterval(() => { if (!document.hidden && !dlg.open) refresh(true); }, CONFIG.POLL_MS);
+  else window.addEventListener("storage", () => refresh(true));
+  document.addEventListener("visibilitychange", () => { if (!document.hidden && !dlg.open) refresh(true); });
+})();
+</script>
+</body>
+</html>
